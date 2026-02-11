@@ -1,51 +1,71 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics.pairwise import euclidean_distances
+from scipy.cluster.hierarchy import dendrogram, linkage
 
-# ---------------------------
-# Load dataset and train model
-# ---------------------------
+st.title("📰 Financial News Clustering using Hierarchical Clustering")
+
+# ---------------------------------------------------
+# Load data + train clustering + compute centroids
+# ---------------------------------------------------
 @st.cache_resource
 def load_model():
     df = pd.read_csv("all-data.csv", encoding="latin1", header=None)
     df.columns = ["Sentiment","News"]
 
-    # TF-IDF
     tfidf = TfidfVectorizer(stop_words="english", max_features=1000)
     X = tfidf.fit_transform(df["News"])
     X_dense = X.toarray()
 
-    # Hierarchical Clustering
+    # Hierarchical clustering
     hc = AgglomerativeClustering(n_clusters=3, metric='euclidean', linkage='ward')
     clusters = hc.fit_predict(X_dense)
 
-    return tfidf, X_dense, clusters
+    # Compute centroids manually (needed for prediction)
+    centroids = []
+    for i in range(3):
+        centroids.append(X_dense[clusters == i].mean(axis=0))
+    centroids = np.array(centroids)
 
-tfidf, X_dense, clusters = load_model()
+    return df, tfidf, X_dense, centroids
 
-# ---------------------------
-# Streamlit UI
-# ---------------------------
-st.title("📰 Financial News Clustering App")
-st.write("Enter a news headline and see which cluster it belongs to")
+df, tfidf, X_dense, centroids = load_model()
 
-user_input = st.text_area("Enter Financial News:")
+# ---------------------------------------------------
+# 📊 Show Dendrogram
+# ---------------------------------------------------
+st.subheader("📊 Hierarchical Clustering Dendrogram")
 
-# ---------------------------
-# Predict cluster for new text
-# ---------------------------
+sample_data = X_dense[:500]   # small sample for speed
+linked = linkage(sample_data, method='ward')
+
+fig, ax = plt.subplots(figsize=(10,5))
+dendrogram(linked, truncate_mode='level', p=5, ax=ax)
+
+# horizontal cut line
+ax.axhline(y=15, linestyle='--')
+
+st.pyplot(fig)
+
+# ---------------------------------------------------
+# 🔍 News Cluster Prediction
+# ---------------------------------------------------
+st.subheader("🔍 Predict Cluster for New News")
+
+user_input = st.text_area("Enter Financial News")
+
 if st.button("Predict Cluster"):
     if user_input.strip() == "":
-        st.warning("Please enter some news text")
+        st.warning("Please enter news text")
     else:
         new_vec = tfidf.transform([user_input]).toarray()
-
-        # Find closest cluster using distance
-        from sklearn.metrics.pairwise import euclidean_distances
-        distances = euclidean_distances(new_vec, X_dense)
-        closest_index = distances.argmin()
-        predicted_cluster = clusters[closest_index]
+        distances = euclidean_distances(new_vec, centroids)
+        predicted_cluster = distances.argmin()
 
         st.success(f"Predicted Cluster: {predicted_cluster}")
 
